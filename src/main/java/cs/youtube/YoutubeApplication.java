@@ -9,21 +9,21 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.lang.NonNull;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.util.Assert;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Flux;
 
 import java.net.URL;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @EnableConfigurationProperties(YoutubeProperties.class)
 @SpringBootApplication
@@ -34,20 +34,32 @@ public class YoutubeApplication {
 	}
 
 	@Bean
-	WebClient client(WebClient.Builder builder) {
+	WebClient webClient(WebClient.Builder builder) {
 		return builder.build();
 	}
 
 	@Bean
-	YoutubeService youtubeService(YoutubeClient client, YoutubeProperties properties, DatabaseClient databaseClient) {
-		return new YoutubeService(client, properties.channelId(), databaseClient);
+	DefaultYoutubeService youtubeService(ApplicationEventPublisher applicationEventPublisher, YoutubeClient client,
+			YoutubeProperties properties, DatabaseClient databaseClient) {
+		return new DefaultYoutubeService(applicationEventPublisher, client, properties.channelId(), databaseClient);
 	}
+
+}
+
+/**
+ * for queries...
+ */
+interface YoutubeService {
+
+	Set<Video> videos();
 
 }
 
 @Slf4j
 @RequiredArgsConstructor
-class YoutubeService {
+class DefaultYoutubeService implements YoutubeService {
+
+	private final ApplicationEventPublisher publisher;
 
 	private final YoutubeClient client;
 
@@ -55,7 +67,16 @@ class YoutubeService {
 
 	private final DatabaseClient databaseClient;
 
-	private final String insertSql = """
+	private final String unpromotedQuerySql = """
+			    select  yt.* from
+			        promoted_youtube_videos pyt ,
+			        youtube_videos yt
+			    where
+			        yt.video_id = pyt.video_id and
+			        pyt.promoted_at is null;
+			""";
+
+	private final String youtubeVideosUpsertSql = """
 			insert into youtube_videos (
 			    video_id     ,
 			    title        ,
@@ -69,7 +90,7 @@ class YoutubeService {
 			    comment_count ,
 			    tags
 			)
-			values(
+			values (
 			    :video_id     ,
 			    :title        ,
 			    :description  ,
@@ -81,16 +102,49 @@ class YoutubeService {
 			    :favorite_count,
 			    :comment_count ,
 			    :tags
-			) ;
+			)
+			on conflict (video_id) do update set
+			        title = excluded.title,
+			        description = excluded.description,
+			        published_at = excluded.published_at,
+			        thumbnail_url = excluded.thumbnail_url,
+			        category_id = excluded.category_id,
+			        view_count = excluded.view_count,
+			        like_count = excluded.like_count,
+			        favorite_count = excluded.favorite_count,
+			        comment_count = excluded.comment_count,
+			        tags = excluded.tags
+			;
 			""";
+
+	private final String promotedYoutubeVideosUpsertSql = """
+			insert into promoted_youtube_videos( video_id )
+			select video_id from youtube_videos
+			on conflict (video_id) do nothing
+			""";
+
+	private final Set<Video> videos = new CopyOnWriteArraySet<>();
 
 	@EventListener({ ApplicationReadyEvent.class, YoutubeChannelUpdatedEvent.class })
 	public void refresh() {
-		var fluxOfVideos = this.client//
+
+		var mapVideoFunction = (Function<Map<String, Object>, Video>) row -> new Video(readColumn(row, "video_id"), //
+				readColumn(row, "title"), //
+				readColumn(row, "description"), //
+				buildDateFromLocalDateTime(readColumn(row, "published_at")), //
+				buildUrlFromString(readColumn(row, "thumbnail_url")), //
+				buildListFromArray(readColumn(row, "tags")), //
+				readColumn(row, "category_id"), //
+				readColumn(row, "view_count"), //
+				readColumn(row, "like_count"), //
+				readColumn(row, "favorite_count"), //
+				readColumn(row, "comment_count"), //
+				this.channelId);
+		var collection = this.client//
 				.getChannelById(this.channelId)//
 				.flatMapMany(channel -> this.client.getAllVideosByChannel(channel.channelId()))//
 				.flatMap(video -> this.databaseClient//
-						.sql(this.insertSql)//
+						.sql(this.youtubeVideosUpsertSql)//
 						.bind("video_id", video.videoId())//
 						.bind("title", video.title())//
 						.bind("description", video.description())//
@@ -104,44 +158,54 @@ class YoutubeService {
 						.bind("tags", video.tags().toArray(new String[0]))//
 						.fetch()//
 						.rowsUpdated()//
-				);
-		fluxOfVideos//
+				) //
+				.thenMany(this.databaseClient.sql(this.promotedYoutubeVideosUpsertSql).fetch().rowsUpdated())
+				.thenMany(this.databaseClient.sql(this.unpromotedQuerySql).fetch().all().map(mapVideoFunction))//
+				.doOnNext(video -> this.publisher.publishEvent(new YoutubeVideoCreatedEvent(video)))
 				.doOnError(throwable -> log.error(throwable.getMessage()))//
-				.thenMany(all())//
-				.subscribe(video -> log.info(video.toString()));
+				.thenMany(this.databaseClient.sql("select * from youtube_videos ").fetch().all().map(mapVideoFunction)) //
+				.toStream()//
+				.collect(Collectors.toSet());
+
+		synchronized (this.videos) {
+			this.videos.clear();
+			this.videos.addAll(collection);
+			log.info("there are {} {} videos.", this.videos.size(), Video.class.getSimpleName());
+		}
 
 	}
 
+	@EventListener
+	void videoCreatedEventListener(YoutubeVideoCreatedEvent videoCreatedEvent) {
+		log.info("need to promote: {} ", videoCreatedEvent);
+	}
+
 	@SneakyThrows
-	private static URL urlFrom(String urlString) {
+	private static URL buildUrlFromString(String urlString) {
 		return new URL(urlString);
 	}
 
 	@SuppressWarnings("unchecked")
-	private <T> T col(Map<String, Object> row, String key) {
+	private static @NonNull <T> T readColumn(Map<String, Object> row, String key) {
 		if (row.containsKey(key))
 			return (T) row.getOrDefault(key, null);
-		return null;
+		throw new IllegalArgumentException("we should never reach this point!");
 	}
 
-	private Date dateFromLocalDateTime(@NonNull LocalDateTime localDateTime) {
+	private static Date buildDateFromLocalDateTime(@NonNull LocalDateTime localDateTime) {
 		Assert.notNull(localDateTime, "the " + LocalDateTime.class.getName() + " must not be null");
 		return Date.from(localDateTime.atZone(ZoneId.systemDefault()).toInstant());
 	}
 
-	private List<String> listFromArray(String[] tags) {
+	private static List<String> buildListFromArray(String[] tags) {
 		if (tags != null)
 			return Arrays.asList(tags);
 		return List.of();
 	}
 
-	private Flux<Video> all() {
-		return this.databaseClient.sql("select * from  youtube_videos").fetch().all()
-				.map(row -> new Video(col(row, "video_id"), col(row, "title"), col(row, "description"),
-						dateFromLocalDateTime(col(row, "published_at")), urlFrom(col(row, "thumbnail_url")),
-						listFromArray(col(row, "tags")), col(row, "category_id"), col(row, "view_count"),
-						col(row, "like_count"), col(row, "favorite_count"), col(row, "comment_count"),
-						col(row, "channel_id")));
+	@Override
+	public Set<Video> videos() {
+		return this.videos;
 	}
 
 }
