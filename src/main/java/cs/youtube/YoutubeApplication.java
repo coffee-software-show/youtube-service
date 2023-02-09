@@ -20,8 +20,10 @@ import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.Assert;
+import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -56,17 +58,12 @@ public class YoutubeApplication {
 }
 
 // todo
+@RequiredArgsConstructor
 class PubsubHubbubClient {
 
 	private final WebClient http;
 
-	private final String verify;
-
-	private final String hubUrl;
-
-	private final String credentials;
-
-	private final String verifyToken;
+	private final URL hubUrl;
 
 	public enum Verify {
 
@@ -74,16 +71,38 @@ class PubsubHubbubClient {
 
 	}
 
-	PubsubHubbubClient(WebClient http, Verify verify, String hubUrl, String credentials, String verifyToken) {
-		this.http = http;
-		this.verify = (verify == null ? Verify.ASYNC : verify).name().toLowerCase();
-		this.hubUrl = hubUrl;
-		this.credentials = credentials;
-		this.verifyToken = verifyToken;
+	public enum Mode {
+
+		SUBSCRIBE, UNSUBSCRIBE
+
 	}
 
-	Mono<Void> subscribe(URL callback, long leaseInSeconds) {
-		return Mono.empty();
+	Mono<String> unsubscribe(URL topicUrl, URL callbackUrl, Verify verify, long leaseInSeconds, String verifyToken) {
+		return changeSubscription(leaseInSeconds, verify, verifyToken, callbackUrl, Mode.UNSUBSCRIBE, topicUrl);
+	}
+
+	Mono<String> subscribe(URL topicUrl, URL callbackUrl, Verify verify, long leaseInSeconds, String verifyToken) {
+		Assert.notNull(callbackUrl, "the callback URL must be valid");
+		Assert.notNull(hubUrl, "the hub URL must be valid");
+		return this.changeSubscription(leaseInSeconds, verify, verifyToken, callbackUrl, Mode.SUBSCRIBE, topicUrl);
+	}
+
+	private Mono<String> changeSubscription(long leaseSeconds, Verify verify, String verifyToken, URL callbackUrl,
+			Mode mode, URL topicUrl) {
+		var required = Map.of("hub.verify", verify.name().toLowerCase(), "hub.mode", mode.name().toLowerCase(),
+				"hub.callback", callbackUrl.toExternalForm(), "hub.topic", topicUrl.toExternalForm());
+		var map = new HashMap<>(required);
+		if (StringUtils.hasText(verifyToken))
+			map.put("hub.verify_token", verifyToken);
+		if (leaseSeconds > 0)
+			map.put("hub.lease_seconds", Long.toString(leaseSeconds));
+		var mvm = new LinkedMultiValueMap<String, String>();
+		for (var k : map.keySet())
+			mvm.put(k, List.of(map.get(k)));
+
+		return this.http.post()//
+				.body(BodyInserters.fromMultipartData(mvm)).retrieve().bodyToMono(String.class);
+
 	}
 
 }
