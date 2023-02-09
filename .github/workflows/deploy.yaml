@@ -5,6 +5,11 @@ env:
   GKE_ZONE: us-central1-c
   GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
   PROJECT_ID: ${{ secrets.GKE_PROJECT }}
+  COFFEE_SOFTWARE_SHOW_DB_HOST: ${{ secrets.COFFEE_SOFTWARE_SHOW_DB_HOST }}
+  COFFEE_SOFTWARE_SHOW_DB_NAME: ${{ secrets.COFFEE_SOFTWARE_SHOW_DB_NAME }}
+  COFFEE_SOFTWARE_SHOW_DB_PASSWORD: ${{ secrets.COFFEE_SOFTWARE_SHOW_DB_PASSWORD }}
+  COFFEE_SOFTWARE_SHOW_DB_URL: ${{ secrets.COFFEE_SOFTWARE_SHOW_DB_URL }}
+  COFFEE_SOFTWARE_SHOW_DB_USERNAME: ${{ secrets.COFFEE_SOFTWARE_SHOW_DB_USERNAME }}
 
 on:
   push:
@@ -45,7 +50,7 @@ jobs:
           distribution: 'adopt'
           java-version: 17
 
-      - name: Deploy API 
+      - name: Deploy API
         run: |
           cd $GITHUB_WORKSPACE
           export ROOT_DIR=$GITHUB_WORKSPACE
