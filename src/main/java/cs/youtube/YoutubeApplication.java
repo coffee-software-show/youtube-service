@@ -19,6 +19,7 @@ import org.springframework.lang.NonNull;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.Assert;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -87,11 +88,11 @@ class YoutubeController {
 	 * we'll connect this to the webhook from the youtube data api.
 	 */
 	@RequestMapping(value = "/refresh", method = { RequestMethod.GET, RequestMethod.POST })
-	ResponseEntity<?> refresh(RequestEntity<String> payload) {
+	ResponseEntity<?> refresh(RequestEntity<String> payload,
+			@RequestParam(value = "hub.challenge", required = false) String hubChallenge) {
 
-		var challengeKey = "hub.challenge";
-		if (payload.getHeaders().containsKey(challengeKey))
-			return ResponseEntity.ok(payload.getHeaders().get(challengeKey));
+		if (StringUtils.hasText(hubChallenge))
+			return ResponseEntity.ok(hubChallenge);
 
 		log.info("webhook update!");
 		log.info("headers");
