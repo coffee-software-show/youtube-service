@@ -18,7 +18,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.scheduling.annotation.Async;
-import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -57,6 +56,7 @@ public class YoutubeApplication {
 
 }
 
+@Slf4j
 @Configuration
 @RequiredArgsConstructor
 class EventListenerConfiguration {
@@ -64,6 +64,12 @@ class EventListenerConfiguration {
 	private final YoutubeService service;
 
 	private final ApplicationEventPublisher publisher;
+
+	@EventListener
+	void videoCreated(YoutubeVideoCreatedEvent videoCreatedEvent) {
+		log.info("need to promote: {} ", videoCreatedEvent.video().videoId() + ':' + videoCreatedEvent.video().title());
+		// todo publish to twitter
+	}
 
 	// hack: periodically force a re-evaluation of the data
 	@EventListener(ApplicationReadyEvent.class)
@@ -257,12 +263,6 @@ class DefaultYoutubeService implements YoutubeService {
 			log.info("there are {} {} videos.", this.videos.size(), Video.class.getSimpleName());
 		}
 
-	}
-
-	@EventListener
-	void videoCreatedEventListener(YoutubeVideoCreatedEvent videoCreatedEvent) {
-		log.info("need to promote: {} ", videoCreatedEvent.video().videoId() + ':' + videoCreatedEvent.video().title());
-		// todo publish to twitter
 	}
 
 	@SneakyThrows
