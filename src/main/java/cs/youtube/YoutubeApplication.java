@@ -88,6 +88,11 @@ class YoutubeController {
 	 */
 	@RequestMapping(value = "/refresh", method = { RequestMethod.GET, RequestMethod.POST })
 	ResponseEntity<?> refresh(RequestEntity<String> payload) {
+
+		var challengeKey = "hub.challenge";
+		if (payload.getHeaders().containsKey(challengeKey))
+			return ResponseEntity.ok(payload.getHeaders().get(challengeKey));
+
 		log.info("webhook update!");
 		log.info("headers");
 		payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
