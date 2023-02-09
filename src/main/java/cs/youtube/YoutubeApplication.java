@@ -100,7 +100,7 @@ class YoutubeController {
 		log.info("payload");
 		log.info("" + (payload.getBody()));
 		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
-		return ResponseEntity.ok().build();
+		return ResponseEntity.status(204).build();
 	}
 
 	@GetMapping("/videos")
