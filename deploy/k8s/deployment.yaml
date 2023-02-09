@@ -40,6 +40,11 @@ spec:
               port: 8080
               path: /actuator/health/liveness
           env:
+            - name: COFFEE_SOFTWARE_SHOW_YOUTUBE_DATA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: coffeesoftware-show-api-secrets
+                  key: COFFEE_SOFTWARE_SHOW_YOUTUBE_DATA_API_KEY
             - name: COFFEE_SOFTWARE_SHOW_DB_HOST
               valueFrom:
                 secretKeyRef:
