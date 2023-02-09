@@ -17,7 +17,6 @@ import org.springframework.http.RequestEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.r2dbc.core.DatabaseClient;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.Assert;
 import org.springframework.util.LinkedMultiValueMap;
@@ -77,20 +76,24 @@ class PubsubHubbubClient {
 
 	}
 
-	Mono<String> unsubscribe(URL topicUrl, URL callbackUrl, Verify verify, long leaseInSeconds, String verifyToken) {
+	Mono<ResponseEntity<Void>> unsubscribe(URL topicUrl, URL callbackUrl, Verify verify, long leaseInSeconds,
+			String verifyToken) {
 		return this.changeSubscription(leaseInSeconds, verify, verifyToken, callbackUrl, Mode.UNSUBSCRIBE, topicUrl);
 	}
 
-	Mono<String> subscribe(URL topicUrl, URL callbackUrl, Verify verify, long leaseInSeconds, String verifyToken) {
-		Assert.notNull(callbackUrl, "the callback URL must be valid");
-		Assert.notNull(hubUrl, "the hub URL must be valid");
+	Mono<ResponseEntity<Void>> subscribe(URL topicUrl, URL callbackUrl, Verify verify, long leaseInSeconds,
+			String verifyToken) {
 		return this.changeSubscription(leaseInSeconds, verify, verifyToken, callbackUrl, Mode.SUBSCRIBE, topicUrl);
 	}
 
-	private Mono<String> changeSubscription(long leaseSeconds, Verify verify, String verifyToken, URL callbackUrl,
-			Mode mode, URL topicUrl) {
-		var required = Map.of("hub.verify", verify.name().toLowerCase(), "hub.mode", mode.name().toLowerCase(),
-				"hub.callback", callbackUrl.toExternalForm(), "hub.topic", topicUrl.toExternalForm());
+	private Mono<ResponseEntity<Void>> changeSubscription(long leaseSeconds, Verify verify, String verifyToken,
+			URL callbackUrl, Mode mode, URL topicUrl) {
+		var required = Map.of(//
+				"hub.verify", verify.name().toLowerCase(), //
+				"hub.mode", mode.name().toLowerCase(), //
+				"hub.callback", callbackUrl.toExternalForm(), //
+				"hub.topic", topicUrl.toExternalForm() //
+		);
 		var map = new HashMap<>(required);
 		if (StringUtils.hasText(verifyToken))
 			map.put("hub.verify_token", verifyToken);
@@ -100,7 +103,10 @@ class PubsubHubbubClient {
 		for (var k : map.keySet())
 			mvm.put(k, List.of(map.get(k)));
 		return this.http.post()//
-				.body(BodyInserters.fromMultipartData(mvm)).retrieve().bodyToMono(String.class);
+				.uri(this.hubUrl.toExternalForm()) //
+				.body(BodyInserters.fromMultipartData(mvm)) //
+				.retrieve() //
+				.toBodilessEntity();
 	}
 
 }
@@ -162,9 +168,25 @@ class YoutubeController {
 
 	private final ApplicationEventPublisher publisher;
 
-	/**
-	 * we'll connect this to the webhook from the youtube data api.
-	 */
+	@RequestMapping(value = "/refresh-2", method = { RequestMethod.GET, RequestMethod.POST })
+	ResponseEntity<?> refresh2(RequestEntity<String> payload,
+			@RequestParam(value = "hub.challenge", required = false) String hubChallenge) {
+
+		log.info("/refresh-2!!!");
+		if (StringUtils.hasText(hubChallenge)) {
+			log.info("got the hub challenge " + hubChallenge);
+			return ResponseEntity.ok(hubChallenge);
+		}
+
+		log.info("webhook update!");
+		log.info("headers");
+		payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
+		log.info("payload");
+		log.info("" + (payload.getBody()));
+		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
+		return ResponseEntity.status(204).build();
+	}
+
 	@RequestMapping(value = "/refresh", method = { RequestMethod.GET, RequestMethod.POST })
 	ResponseEntity<?> refresh(RequestEntity<String> payload,
 			@RequestParam(value = "hub.challenge", required = false) String hubChallenge) {
@@ -268,7 +290,6 @@ class DefaultYoutubeService implements YoutubeService {
 		return this.videos;
 	}
 
-	@Async
 	@Override
 	public void refresh() {
 
@@ -284,7 +305,8 @@ class DefaultYoutubeService implements YoutubeService {
 				readColumn(row, "favorite_count"), //
 				readColumn(row, "comment_count"), //
 				this.channelId);
-		var collection = this.databaseClient.sql("update youtube_videos set fresh = false").fetch().rowsUpdated()
+		var collection = this.databaseClient //
+				.sql("update youtube_videos set fresh = false").fetch().rowsUpdated()
 				.thenMany(this.client.getChannelById(this.channelId))//
 				.flatMap(channel -> this.client.getAllVideosByChannel(channel.channelId()))//
 				.flatMap(video -> this.databaseClient//
