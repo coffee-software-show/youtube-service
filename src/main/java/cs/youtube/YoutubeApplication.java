@@ -261,8 +261,7 @@ class DefaultYoutubeService implements YoutubeService {
 
 	@EventListener
 	void videoCreatedEventListener(YoutubeVideoCreatedEvent videoCreatedEvent) {
-		log.info("need to promote: {} ", videoCreatedEvent  .video().videoId() + ':' +
-                 videoCreatedEvent.video().title());
+		log.info("need to promote: {} ", videoCreatedEvent.video().videoId() + ':' + videoCreatedEvent.video().title());
 		// todo publish to twitter
 	}
 
