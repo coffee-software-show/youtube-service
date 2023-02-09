@@ -62,9 +62,9 @@ interface YoutubeService {
 @Controller
 @ResponseBody
 @RequiredArgsConstructor
-@CrossOrigin(
-		origins = { "http://localhost:8081", "https://coffee-software-show.github.io", "http://www.coffeesoftware.com",
-				"https://www.coffeesoftware.com", "http://coffeesoftware.com", "https://coffeesoftware.com" })
+@CrossOrigin(origins = { "http://192.168.4.218:8081", "http://localhost:8081", "https://coffee-software-show.github.io",
+		"http://www.coffeesoftware.com", "https://www.coffeesoftware.com", "http://coffeesoftware.com",
+		"https://coffeesoftware.com" })
 class YoutubeController {
 
 	private final YoutubeService service;
