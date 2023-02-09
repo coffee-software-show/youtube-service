@@ -14,6 +14,7 @@ import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.RequestEntity;
+import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Controller;
@@ -86,13 +87,14 @@ class YoutubeController {
 	 * we'll connect this to the webhook from the youtube data api.
 	 */
 	@RequestMapping(value = "/refresh", method = { RequestMethod.GET, RequestMethod.POST })
-	void refresh(RequestEntity<String> payload) {
+	ResponseEntity<?> refresh(RequestEntity<String> payload) {
 		log.info("webhook update!");
 		log.info("headers");
 		payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
 		log.info("payload");
 		log.info(Objects.requireNonNull(payload.getBody()));
 		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
+		return ResponseEntity.ok().build();
 	}
 
 	@GetMapping("/videos")
