@@ -92,7 +92,7 @@ class YoutubeController {
 		log.info("headers");
 		payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
 		log.info("payload");
-		log.info(Objects.requireNonNull(payload.getBody()));
+		log.info("" + (payload.getBody()));
 		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
 		return ResponseEntity.ok().build();
 	}
