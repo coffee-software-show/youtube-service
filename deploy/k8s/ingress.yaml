@@ -1,0 +1,14 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    ingress.kubernetes.io/force-ssl-redirect: "true"
+    networking.gke.io/managed-certificates: "coffeesoftware-show-api-certificate"
+    kubernetes.io/ingress.global-static-ip-name: "coffeesoftware-show-api-ip"
+  name: coffeesoftware-show-api-ingress
+spec:
+  defaultBackend:
+    service:
+      name: coffeesoftware-show-api
+      port:
+        number: 80

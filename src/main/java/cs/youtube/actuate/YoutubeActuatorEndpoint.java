@@ -11,9 +11,7 @@ import java.util.Map;
 
 /**
  * todo hook this up to a webhook from Youtube Data API
- *
  */
-
 @Endpoint(id = "youtube")
 @RequiredArgsConstructor
 class YoutubeActuatorEndpoint {

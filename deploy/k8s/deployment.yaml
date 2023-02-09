@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coffeesoftware-show-api
+  name: coffeesoftware-show-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coffeesoftware-show-api
+  template:
+    metadata:
+      labels:
+        app: coffeesoftware-show-api
+    spec:
+      containers:
+        - image: gcr.io/bootiful/coffeesoftware-show-api
+          imagePullPolicy: Always
+          name: coffeesoftware-show-api
+
+          startupProbe:
+            failureThreshold: 120
+            periodSeconds: 120
+            httpGet:
+              port: 8080
+              path: /actuator/health/readiness
+
+          readinessProbe:
+            failureThreshold: 120
+            periodSeconds: 120
+            httpGet:
+              port: 8080
+              path: /actuator/health/readiness
+
+          livenessProbe:
+            failureThreshold: 120
+            periodSeconds: 120
+            httpGet:
+              port: 8080
+              path: /actuator/health/liveness
+          env:
+            - name: COFFEE_SOFTWARE_SHOW_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: coffeesoftware-show-api-secrets
+                  key: COFFEE_SOFTWARE_SHOW_DB_HOST
+            - name: COFFEE_SOFTWARE_SHOW_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: coffeesoftware-show-api-secrets
+                  key: COFFEE_SOFTWARE_SHOW_DB_NAME
+            - name: COFFEE_SOFTWARE_SHOW_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: coffeesoftware-show-api-secrets
+                  key: COFFEE_SOFTWARE_SHOW_DB_PASSWORD
+            - name: COFFEE_SOFTWARE_SHOW_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: coffeesoftware-show-api-secrets
+                  key: COFFEE_SOFTWARE_SHOW_DB_URL
+            - name: COFFEE_SOFTWARE_SHOW_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: coffeesoftware-show-api-secrets
+                  key: COFFEE_SOFTWARE_SHOW_DB_USERNAME
+            - name: LANG
+              value: "en_US.UTF-8"
+
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              memory: "2Gi"
+            requests:
+              memory: "2Gi"

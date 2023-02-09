@@ -10,7 +10,8 @@ create table if not exists youtube_videos
     view_count     int,
     like_count     int,
     favorite_count int,
-    comment_count  int
+    comment_count  int,
+    fresh          bool
 );
 
 create table if not exists promoted_youtube_videos
