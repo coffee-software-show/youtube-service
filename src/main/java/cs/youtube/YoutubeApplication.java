@@ -86,7 +86,7 @@ class YoutubeController {
 	 * we'll connect this to the webhook from the youtube data api.
 	 */
 	@RequestMapping(value = "/refresh", method = { RequestMethod.GET, RequestMethod.POST })
-	void refresh(@RequestBody RequestEntity<String> payload) {
+	void refresh(RequestEntity<String> payload) {
 		log.info("webhook update!");
 		log.info("headers");
 		payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
