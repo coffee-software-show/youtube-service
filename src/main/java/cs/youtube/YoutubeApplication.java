@@ -23,15 +23,14 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.net.URL;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -39,21 +38,48 @@ import java.util.stream.Collectors;
 @SpringBootApplication
 public class YoutubeApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(YoutubeApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(YoutubeApplication.class, args);
+    }
 
-	@Bean
-	WebClient webClient(WebClient.Builder builder) {
-		return builder.build();
-	}
+    @Bean
+    WebClient webClient(WebClient.Builder builder) {
+        return builder.build();
+    }
 
-	@Bean
-	DefaultYoutubeService youtubeService(ApplicationEventPublisher applicationEventPublisher, YoutubeClient client,
-			YoutubeProperties properties, DatabaseClient databaseClient) {
-		return new DefaultYoutubeService(applicationEventPublisher, client, properties.channelId(), databaseClient);
-	}
+    @Bean
+    DefaultYoutubeService youtubeService(ApplicationEventPublisher applicationEventPublisher, YoutubeClient client,
+                                         YoutubeProperties properties, DatabaseClient databaseClient) {
+        return new DefaultYoutubeService(applicationEventPublisher, client, properties.channelId(), databaseClient);
+    }
 
+}
+
+// todo
+class PubsubHubbubClient {
+
+    private final WebClient http;
+
+    private final String verify;
+    private final String hubUrl;
+    private final String credentials;
+    private final String verifyToken;
+
+    public enum Verify {
+        ASYNC, SYNC
+    }
+
+    PubsubHubbubClient(WebClient http, Verify verify, String hubUrl, String credentials, String verifyToken) {
+        this.http = http;
+        this.verify = (verify == null ? Verify.ASYNC : verify).name().toLowerCase();
+        this.hubUrl = hubUrl;
+        this.credentials = credentials;
+        this.verifyToken = verifyToken;
+    }
+
+    Mono<Void> subscribe(URL callback, long leaseInSeconds) {
+        return Mono.empty();
+    }
 }
 
 @Slf4j
@@ -61,36 +87,41 @@ public class YoutubeApplication {
 @RequiredArgsConstructor
 class EventListenerConfiguration {
 
-	private final YoutubeService service;
+    private final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
+    private final ExecutorService executorService = Executors.newCachedThreadPool();
+    private final YoutubeService service;
+    private final ApplicationEventPublisher publisher;
 
-	private final ApplicationEventPublisher publisher;
+    @EventListener
+    void videoCreated(YoutubeVideoCreatedEvent videoCreatedEvent) {
+        log.info("YoutubeVideoCreatedEvent");
+        log.info("need to promote: {} ", videoCreatedEvent.video().videoId() +
+                ':' + videoCreatedEvent.video().title());
+    }
 
-	@EventListener
-	void videoCreated(YoutubeVideoCreatedEvent videoCreatedEvent) {
-		log.info("need to promote: {} ", videoCreatedEvent.video().videoId() + ':' + videoCreatedEvent.video().title());
-		// todo publish to twitter
-	}
 
-	// hack: periodically force a re-evaluation of the data
-	@EventListener(ApplicationReadyEvent.class)
-	void kickoff() {
-		publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
-		Executors.newScheduledThreadPool(1).schedule(
-				() -> publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now())), 1, TimeUnit.HOURS);
-	}
+    // hack: periodically force a re-evaluation of the data
+    @EventListener(ApplicationReadyEvent.class)
+    void kickoff() {
+        log.info("ApplicationReadyEvent");
+        this.executorService.submit(() -> this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now())));
+        this.scheduledExecutorService.schedule(
+                () -> this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now())), 1, TimeUnit.HOURS);
+    }
 
-	@EventListener(YoutubeChannelUpdatedEvent.class)
-	void youtubeChannelUpdated() {
-		service.refresh();
-	}
+    @EventListener(YoutubeChannelUpdatedEvent.class)
+    void youtubeChannelUpdated() {
+        log.info("YoutubeChannelUpdatedEvent");
+        service.refresh();
+    }
 
 }
 
 interface YoutubeService {
 
-	void refresh();
+    void refresh();
 
-	List<Video> videos();
+    List<Video> videos();
 
 }
 
@@ -98,40 +129,40 @@ interface YoutubeService {
 @Controller
 @ResponseBody
 @RequiredArgsConstructor
-@CrossOrigin(origins = { "http://192.168.4.218:8081", "http://localhost:8081", "https://coffee-software-show.github.io",
-		"http://www.coffeesoftware.com", "https://www.coffeesoftware.com", "http://coffeesoftware.com",
-		"https://coffeesoftware.com" })
+@CrossOrigin(origins = {"http://192.168.4.218:8081", "http://localhost:8081", "https://coffee-software-show.github.io",
+        "http://www.coffeesoftware.com", "https://www.coffeesoftware.com", "http://coffeesoftware.com",
+        "https://coffeesoftware.com"})
 class YoutubeController {
 
-	private final YoutubeService service;
+    private final YoutubeService service;
 
-	private final ApplicationEventPublisher publisher;
+    private final ApplicationEventPublisher publisher;
 
-	/**
-	 * we'll connect this to the webhook from the youtube data api.
-	 */
-	@RequestMapping(value = "/refresh", method = { RequestMethod.GET, RequestMethod.POST })
-	ResponseEntity<?> refresh(RequestEntity<String> payload,
-			@RequestParam(value = "hub.challenge", required = false) String hubChallenge) {
+    /**
+     * we'll connect this to the webhook from the youtube data api.
+     */
+    @RequestMapping(value = "/refresh", method = {RequestMethod.GET, RequestMethod.POST})
+    ResponseEntity<?> refresh(RequestEntity<String> payload,
+                              @RequestParam(value = "hub.challenge", required = false) String hubChallenge) {
 
-		if (StringUtils.hasText(hubChallenge)) {
-			log.info("got the hub challenge " + hubChallenge);
-			return ResponseEntity.ok(hubChallenge);
-		}
+        if (StringUtils.hasText(hubChallenge)) {
+            log.info("got the hub challenge " + hubChallenge);
+            return ResponseEntity.ok(hubChallenge);
+        }
 
-		log.info("webhook update!");
-		log.info("headers");
-		payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
-		log.info("payload");
-		log.info("" + (payload.getBody()));
-		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
-		return ResponseEntity.status(204).build();
-	}
+        log.info("webhook update!");
+        log.info("headers");
+        payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
+        log.info("payload");
+        log.info("" + (payload.getBody()));
+        this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
+        return ResponseEntity.status(204).build();
+    }
 
-	@GetMapping("/videos")
-	Collection<Video> videos() {
-		return this.service.videos();
-	}
+    @GetMapping("/videos")
+    Collection<Video> videos() {
+        return this.service.videos();
+    }
 
 }
 
@@ -139,153 +170,153 @@ class YoutubeController {
 @RequiredArgsConstructor
 class DefaultYoutubeService implements YoutubeService {
 
-	private final ApplicationEventPublisher publisher;
+    private final ApplicationEventPublisher publisher;
 
-	private final YoutubeClient client;
+    private final YoutubeClient client;
 
-	private final String channelId;
+    private final String channelId;
 
-	private final DatabaseClient databaseClient;
+    private final DatabaseClient databaseClient;
 
-	private final String unpromotedQuerySql = """
-			    select  yt.* from
-			        promoted_youtube_videos pyt ,
-			        youtube_videos yt
-			    where
-			        yt.video_id = pyt.video_id and
-			        pyt.promoted_at is null;
-			""";
+    private final String unpromotedQuerySql = """
+                select  yt.* from
+                    promoted_youtube_videos pyt ,
+                    youtube_videos yt
+                where
+                    yt.video_id = pyt.video_id and
+                    pyt.promoted_at is null;
+            """;
 
-	private final String youtubeVideosUpsertSql = """
-			insert into youtube_videos (
-			    video_id     ,
-			    title        ,
-			    description  ,
-			    published_at ,
-			    thumbnail_url,
-			    category_id  ,
-			    view_count   ,
-			    like_count   ,
-			    favorite_count,
-			    comment_count ,
-			    tags,
-			    fresh
-			)
-			values (
-			    :video_id     ,
-			    :title        ,
-			    :description  ,
-			    :published_at ,
-			    :thumbnail_url,
-			    :category_id  ,
-			    :view_count   ,
-			    :like_count   ,
-			    :favorite_count,
-			    :comment_count ,
-			    :tags,
-			    true
-			)
-			on conflict (video_id) do update set
-			        title = excluded.title,
-			        description = excluded.description,
-			        published_at = excluded.published_at,
-			        thumbnail_url = excluded.thumbnail_url,
-			        category_id = excluded.category_id,
-			        view_count = excluded.view_count,
-			        like_count = excluded.like_count,
-			        favorite_count = excluded.favorite_count,
-			        comment_count = excluded.comment_count,
-			        tags = excluded.tags ,
-			        fresh = true
-			;
-			""";
+    private final String youtubeVideosUpsertSql = """
+            insert into youtube_videos (
+                video_id     ,
+                title        ,
+                description  ,
+                published_at ,
+                thumbnail_url,
+                category_id  ,
+                view_count   ,
+                like_count   ,
+                favorite_count,
+                comment_count ,
+                tags,
+                fresh
+            )
+            values (
+                :video_id     ,
+                :title        ,
+                :description  ,
+                :published_at ,
+                :thumbnail_url,
+                :category_id  ,
+                :view_count   ,
+                :like_count   ,
+                :favorite_count,
+                :comment_count ,
+                :tags,
+                true
+            )
+            on conflict (video_id) do update set
+                    title = excluded.title,
+                    description = excluded.description,
+                    published_at = excluded.published_at,
+                    thumbnail_url = excluded.thumbnail_url,
+                    category_id = excluded.category_id,
+                    view_count = excluded.view_count,
+                    like_count = excluded.like_count,
+                    favorite_count = excluded.favorite_count,
+                    comment_count = excluded.comment_count,
+                    tags = excluded.tags ,
+                    fresh = true
+            ;
+            """;
 
-	private final String promotedYoutubeVideosUpsertSql = """
-			insert into promoted_youtube_videos( video_id )
-			select video_id from youtube_videos
-			on conflict (video_id) do nothing
-			""";
+    private final String promotedYoutubeVideosUpsertSql = """
+            insert into promoted_youtube_videos( video_id )
+            select video_id from youtube_videos
+            on conflict (video_id) do nothing
+            """;
 
-	private final List<Video> videos = new CopyOnWriteArrayList<>();
+    private final List<Video> videos = new CopyOnWriteArrayList<>();
 
-	@Override
-	public List<Video> videos() {
-		return this.videos;
-	}
+    @Override
+    public List<Video> videos() {
+        return this.videos;
+    }
 
-	@Async
-	@Override
-	public void refresh() {
+    @Async
+    @Override
+    public void refresh() {
 
-		var mapVideoFunction = (Function<Map<String, Object>, Video>) row -> new Video(readColumn(row, "video_id"), //
-				readColumn(row, "title"), //
-				readColumn(row, "description"), //
-				buildDateFromLocalDateTime(readColumn(row, "published_at")), //
-				buildUrlFromString(readColumn(row, "thumbnail_url")), //
-				buildListFromArray(readColumn(row, "tags")), //
-				readColumn(row, "category_id"), //
-				readColumn(row, "view_count"), //
-				readColumn(row, "like_count"), //
-				readColumn(row, "favorite_count"), //
-				readColumn(row, "comment_count"), //
-				this.channelId);
-		var collection = this.databaseClient.sql("update youtube_videos set fresh = false").fetch().rowsUpdated()
-				.thenMany(this.client.getChannelById(this.channelId))//
-				.flatMap(channel -> this.client.getAllVideosByChannel(channel.channelId()))//
-				.flatMap(video -> this.databaseClient//
-						.sql(this.youtubeVideosUpsertSql)//
-						.bind("video_id", video.videoId())//
-						.bind("title", video.title())//
-						.bind("description", video.description())//
-						.bind("published_at", video.publishedAt())//
-						.bind("thumbnail_url", video.standardThumbnail().toExternalForm())//
-						.bind("category_id", video.categoryId())//
-						.bind("view_count", video.viewCount())//
-						.bind("like_count", video.likeCount())//
-						.bind("favorite_count", video.favoriteCount())//
-						.bind("comment_count", video.commentCount())//
-						.bind("tags", video.tags().toArray(new String[0]))//
-						.fetch()//
-						.rowsUpdated()//
-				) //
-				.thenMany(this.databaseClient.sql(this.promotedYoutubeVideosUpsertSql).fetch().rowsUpdated())
-				.thenMany(this.databaseClient.sql(this.unpromotedQuerySql).fetch().all().map(mapVideoFunction))//
-				.doOnNext(video -> this.publisher.publishEvent(new YoutubeVideoCreatedEvent(video)))
-				.doOnError(throwable -> log.error(throwable.getMessage()))//
-				.thenMany(this.databaseClient.sql("select * from youtube_videos ").fetch().all().map(mapVideoFunction)) //
-				.toStream()//
-				.collect(Collectors.toSet());
+        var mapVideoFunction = (Function<Map<String, Object>, Video>) row -> new Video(readColumn(row, "video_id"), //
+                readColumn(row, "title"), //
+                readColumn(row, "description"), //
+                buildDateFromLocalDateTime(readColumn(row, "published_at")), //
+                buildUrlFromString(readColumn(row, "thumbnail_url")), //
+                buildListFromArray(readColumn(row, "tags")), //
+                readColumn(row, "category_id"), //
+                readColumn(row, "view_count"), //
+                readColumn(row, "like_count"), //
+                readColumn(row, "favorite_count"), //
+                readColumn(row, "comment_count"), //
+                this.channelId);
+        var collection = this.databaseClient.sql("update youtube_videos set fresh = false").fetch().rowsUpdated()
+                .thenMany(this.client.getChannelById(this.channelId))//
+                .flatMap(channel -> this.client.getAllVideosByChannel(channel.channelId()))//
+                .flatMap(video -> this.databaseClient//
+                        .sql(this.youtubeVideosUpsertSql)//
+                        .bind("video_id", video.videoId())//
+                        .bind("title", video.title())//
+                        .bind("description", video.description())//
+                        .bind("published_at", video.publishedAt())//
+                        .bind("thumbnail_url", video.standardThumbnail().toExternalForm())//
+                        .bind("category_id", video.categoryId())//
+                        .bind("view_count", video.viewCount())//
+                        .bind("like_count", video.likeCount())//
+                        .bind("favorite_count", video.favoriteCount())//
+                        .bind("comment_count", video.commentCount())//
+                        .bind("tags", video.tags().toArray(new String[0]))//
+                        .fetch()//
+                        .rowsUpdated()//
+                ) //
+                .thenMany(this.databaseClient.sql(this.promotedYoutubeVideosUpsertSql).fetch().rowsUpdated())
+                .thenMany(this.databaseClient.sql(this.unpromotedQuerySql).fetch().all().map(mapVideoFunction))//
+                .doOnNext(video -> this.publisher.publishEvent(new YoutubeVideoCreatedEvent(video)))
+                .doOnError(throwable -> log.error(throwable.getMessage()))//
+                .thenMany(this.databaseClient.sql("select * from youtube_videos ").fetch().all().map(mapVideoFunction)) //
+                .toStream()//
+                .collect(Collectors.toSet());
 
-		synchronized (this.videos) {
-			this.videos.clear();
-			this.videos.addAll(collection);
-			this.videos.sort(Comparator.comparing(Video::publishedAt).reversed());
-			log.info("there are {} {} videos.", this.videos.size(), Video.class.getSimpleName());
-		}
+        synchronized (this.videos) {
+            this.videos.clear();
+            this.videos.addAll(collection);
+            this.videos.sort(Comparator.comparing(Video::publishedAt).reversed());
+            log.info("there are {} {} videos.", this.videos.size(), Video.class.getSimpleName());
+        }
 
-	}
+    }
 
-	@SneakyThrows
-	private static URL buildUrlFromString(String urlString) {
-		return new URL(urlString);
-	}
+    @SneakyThrows
+    private static URL buildUrlFromString(String urlString) {
+        return new URL(urlString);
+    }
 
-	@SuppressWarnings("unchecked")
-	private static @NonNull <T> T readColumn(Map<String, Object> row, String key) {
-		if (row.containsKey(key))
-			return (T) row.getOrDefault(key, null);
-		throw new IllegalArgumentException("we should never reach this point!");
-	}
+    @SuppressWarnings("unchecked")
+    private static @NonNull <T> T readColumn(Map<String, Object> row, String key) {
+        if (row.containsKey(key))
+            return (T) row.getOrDefault(key, null);
+        throw new IllegalArgumentException("we should never reach this point!");
+    }
 
-	private static Date buildDateFromLocalDateTime(@NonNull LocalDateTime localDateTime) {
-		Assert.notNull(localDateTime, "the " + LocalDateTime.class.getName() + " must not be null");
-		return Date.from(localDateTime.atZone(ZoneId.systemDefault()).toInstant());
-	}
+    private static Date buildDateFromLocalDateTime(@NonNull LocalDateTime localDateTime) {
+        Assert.notNull(localDateTime, "the " + LocalDateTime.class.getName() + " must not be null");
+        return Date.from(localDateTime.atZone(ZoneId.systemDefault()).toInstant());
+    }
 
-	private static List<String> buildListFromArray(String[] tags) {
-		if (tags != null)
-			return Arrays.asList(tags);
-		return List.of();
-	}
+    private static List<String> buildListFromArray(String[] tags) {
+        if (tags != null)
+            return Arrays.asList(tags);
+        return List.of();
+    }
 
 }
