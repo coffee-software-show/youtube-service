@@ -10,6 +10,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
 import org.springframework.lang.NonNull;
@@ -22,10 +23,13 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.net.URL;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -40,6 +44,13 @@ public class YoutubeApplication {
 	@Bean
 	WebClient webClient(WebClient.Builder builder) {
 		return builder.build();
+	}
+
+	// hack: periodically force a re-evaluation of the data
+	@Bean
+	ApplicationListener<ApplicationReadyEvent> kickoff(ApplicationEventPublisher publisher) {
+		return event -> Executors.newScheduledThreadPool(1).schedule(
+				() -> publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now())), 1, TimeUnit.HOURS);
 	}
 
 	@Bean
