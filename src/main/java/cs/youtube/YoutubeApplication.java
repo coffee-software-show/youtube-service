@@ -89,9 +89,7 @@ class YoutubeController {
 	void refresh(@RequestBody RequestEntity<String> payload) {
 		log.info("webhook update!");
 		log.info("headers");
-		var h = payload.getHeaders().toSingleValueMap();
-		for (var k : h.keySet())
-			log.info('\t' + k + '=' + h.get(k));
+		payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
 		log.info("payload");
 		log.info(Objects.requireNonNull(payload.getBody()));
 		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
