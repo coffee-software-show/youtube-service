@@ -13,13 +13,12 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.EventListener;
+import org.springframework.http.RequestEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.Assert;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.net.URL;
@@ -70,6 +69,7 @@ interface YoutubeService {
 
 }
 
+@Slf4j
 @Controller
 @ResponseBody
 @RequiredArgsConstructor
@@ -79,6 +79,26 @@ interface YoutubeService {
 class YoutubeController {
 
 	private final YoutubeService service;
+
+	private final ApplicationEventPublisher publisher;
+
+	private static void debug(Map<String, String> h) {
+		for (var k : h.keySet())
+			log.info('\t' + k + '=' + h.get(k));
+	}
+
+	/**
+	 * we'll connect this to the webhook from the youtube data api.
+	 */
+	@RequestMapping(method = { RequestMethod.GET, RequestMethod.POST })
+	void refresh(@RequestBody RequestEntity<Map<String, String>> payload) {
+		log.info("webhook update!");
+		log.info("headers");
+		debug(payload.getHeaders().toSingleValueMap());
+		log.info("payload");
+		debug(Objects.requireNonNull(payload.getBody()));
+		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
+	}
 
 	@GetMapping("/videos")
 	Collection<Video> videos() {
