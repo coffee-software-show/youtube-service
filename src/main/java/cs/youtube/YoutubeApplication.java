@@ -10,13 +10,15 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.RequestEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -34,6 +36,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@EnableAsync
 @EnableConfigurationProperties(YoutubeProperties.class)
 @SpringBootApplication
 public class YoutubeApplication {
@@ -47,13 +50,6 @@ public class YoutubeApplication {
 		return builder.build();
 	}
 
-	// hack: periodically force a re-evaluation of the data
-	@Bean
-	ApplicationListener<ApplicationReadyEvent> kickoff(ApplicationEventPublisher publisher) {
-		return event -> Executors.newScheduledThreadPool(1).schedule(
-				() -> publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now())), 1, TimeUnit.HOURS);
-	}
-
 	@Bean
 	DefaultYoutubeService youtubeService(ApplicationEventPublisher applicationEventPublisher, YoutubeClient client,
 			YoutubeProperties properties, DatabaseClient databaseClient) {
@@ -62,11 +58,33 @@ public class YoutubeApplication {
 
 }
 
+@Configuration
+@RequiredArgsConstructor
+class EventListenerConfiguration {
+
+	private final YoutubeService service;
+
+	private final ApplicationEventPublisher publisher;
+
+	// hack: periodically force a re-evaluation of the data
+	@EventListener(ApplicationReadyEvent.class)
+	void kickoff() {
+		publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
+		Executors.newScheduledThreadPool(1).schedule(
+				() -> publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now())), 1, TimeUnit.HOURS);
+	}
+
+	@EventListener(YoutubeChannelUpdatedEvent.class)
+	void youtubeChannelUpdated() {
+		service.refresh();
+	}
+
+}
+
 interface YoutubeService {
 
-	/**
-	 * sorted oldest to newest
-	 */
+	void refresh();
+
 	List<Video> videos();
 
 }
@@ -91,8 +109,10 @@ class YoutubeController {
 	ResponseEntity<?> refresh(RequestEntity<String> payload,
 			@RequestParam(value = "hub.challenge", required = false) String hubChallenge) {
 
-		if (StringUtils.hasText(hubChallenge))
+		if (StringUtils.hasText(hubChallenge)) {
+			log.info("got the hub challenge " + hubChallenge);
 			return ResponseEntity.ok(hubChallenge);
+		}
 
 		log.info("webhook update!");
 		log.info("headers");
@@ -183,7 +203,13 @@ class DefaultYoutubeService implements YoutubeService {
 
 	private final List<Video> videos = new CopyOnWriteArrayList<>();
 
-	@EventListener({ ApplicationReadyEvent.class, YoutubeChannelUpdatedEvent.class })
+	@Override
+	public List<Video> videos() {
+		return this.videos;
+	}
+
+	@Async
+	@Override
 	public void refresh() {
 
 		var mapVideoFunction = (Function<Map<String, Object>, Video>) row -> new Video(readColumn(row, "video_id"), //
@@ -261,11 +287,6 @@ class DefaultYoutubeService implements YoutubeService {
 		if (tags != null)
 			return Arrays.asList(tags);
 		return List.of();
-	}
-
-	@Override
-	public List<Video> videos() {
-		return this.videos;
 	}
 
 }
