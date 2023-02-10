@@ -1,6 +1,8 @@
 package cs.youtube;
 
 import com.joshlong.google.pubsubhubbub.PubsubHubbubClient;
+import com.joshlong.twitter.Twitter;
+import cs.youtube.utils.UrlUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -8,12 +10,16 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
+import org.springframework.r2dbc.core.DatabaseClient;
 
 import java.net.URL;
 import java.time.Instant;
+import java.util.Date;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
+import static cs.youtube.utils.UrlUtils.url;
 
 @Slf4j
 @Configuration
@@ -28,9 +34,30 @@ class EventListenerConfiguration {
 
 	private final PubsubHubbubClient pubsubHubbubClient;
 
+	private final Twitter twitter;
+
+	private final Twitter.Client client;
+
+	private final DatabaseClient databaseClient;
+
 	@EventListener
 	void videoCreated(YoutubeVideoCreatedEvent videoCreatedEvent) {
 		log.info("need to promote: {}", videoCreatedEvent.video().videoId() + ':' + videoCreatedEvent.video().title());
+		var scheduled = new Date();
+		twitter.scheduleTweet(client, scheduled, "starbuxman",
+				videoCreatedEvent.video().title() + " " + "https://www.youtube.com/watch?v="
+						+ videoCreatedEvent.video().videoId(),
+				null) //
+				.flatMap(promoted -> databaseClient//
+						.sql(" update promoted_youtube_videos set promoted_at = :when where video_id = :videoId ")//
+						.bind("when", scheduled) //
+						.bind("videoId", videoCreatedEvent.video().videoId())//
+						.fetch() //
+						.rowsUpdated()//
+				) //
+				.filter(count -> count > 0) //
+				.subscribe(rows -> log.info("successfully promoted " + videoCreatedEvent.video().videoId()
+						+ " with title " + videoCreatedEvent.video().title()));
 	}
 
 	@EventListener(YoutubeChannelUpdatedEvent.class)
@@ -46,14 +73,9 @@ class EventListenerConfiguration {
 		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
 	}
 
-	@SneakyThrows
-	private static URL url(String url) {
-		return new URL(url);
-	}
-
 	private static void subscribe(PubsubHubbubClient pubsubHubbubClient, int leaseInSeconds) {
-		var topicUrl = url("https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCjcceQmjS4DKBW_J_1UANow");
-		var callbackUrl = url("https://api.coffeesoftware.com/reset");
+		var topicUrl = UrlUtils.url("https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCjcceQmjS4DKBW_J_1UANow");
+		var callbackUrl = UrlUtils.url("https://api.coffeesoftware.com/reset");
 		pubsubHubbubClient //
 				.subscribe(topicUrl, callbackUrl, PubsubHubbubClient.Verify.SYNC, leaseInSeconds, null)
 				.subscribe(re -> log.info("subscribed to " + topicUrl.toExternalForm()));

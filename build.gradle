@@ -20,12 +20,23 @@ configurations {
 
 
 repositories {
+    maven {
+       url = uri("https://cloudnativejava.jfrog.io/cloudnativejava/libs-release")
+    }
+    maven {
+        url = uri("https://cloudnativejava.jfrog.io/cloudnativejava/libs-snapshot")
+    }
 	mavenCentral()
 }
 
 dependencies {
+    // this is just to get rid of an error when using the Spring nullability annotations, which uses but doesn't transitively bring this in
+    implementation 'com.google.code.findbugs:jsr305:3.0.2'
+    // integration with google pubsubhubbub
     implementation 'com.joshlong:google-pubsubhubbub-spring-boot-starter:0.0.3'
-
+    // twitter promotion client
+    implementation 'com.joshlong.twitter:twitter-gateway-client:0.0.3-SNAPSHOT'
+    // regular build
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
