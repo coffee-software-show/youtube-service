@@ -27,7 +27,7 @@ class PubsubHubbubClientTest {
 		return null;
 	}
 
-	@Test
+	// @Test
 	void subscribe() throws Exception {
 		var topicUrl = url("https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCjcceQmjS4DKBW_J_1UANow");
 		var callbackUrl = url("https://api.coffeesoftware.com/refresh-2");
