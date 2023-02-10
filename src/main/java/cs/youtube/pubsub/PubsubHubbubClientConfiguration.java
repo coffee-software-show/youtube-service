@@ -50,7 +50,6 @@ class PubsubHubbubClientConfiguration {
 		var topicUrl = url("https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCjcceQmjS4DKBW_J_1UANow");
 		var callbackUrl = url("https://api.coffeesoftware.com/reset");
 		pubsubHubbubClient.subscribe(topicUrl, callbackUrl, PubsubHubbubClient.Verify.SYNC, leaseInSeconds, null)
-
 				.subscribe(re -> log.info("subscribed to " + topicUrl.toExternalForm()));
 	}
 

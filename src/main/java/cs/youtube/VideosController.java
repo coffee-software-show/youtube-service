@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @Controller
@@ -21,6 +23,8 @@ import java.util.Collection;
 		"http://www.coffeesoftware.com", "https://www.coffeesoftware.com", "http://coffeesoftware.com",
 		"https://coffeesoftware.com" })
 class VideosController {
+
+	private final Executor executor = Executors.newSingleThreadExecutor();
 
 	private final YoububeAggregate service;
 
@@ -37,7 +41,7 @@ class VideosController {
 		}
 		payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
 		log.info("payload: " + payload.getBody());
-		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
+		this.executor.execute(() -> publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now())));
 		return ResponseEntity.status(204).build();
 	}
 
