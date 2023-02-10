@@ -122,11 +122,6 @@ class PubsubHubbubClientConfiguration {
 	private final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
 
 	@Bean
-	WebClient webClient(WebClient.Builder builder) {
-		return builder.build();
-	}
-
-	@Bean
 	PubsubHubbubClient pubsubHubbubClient(WebClient http) {
 		return new PubsubHubbubClient(http, url("https://pubsubhubbub.appspot.com"));
 	}
