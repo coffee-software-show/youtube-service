@@ -223,7 +223,6 @@ class DefaultYoutubeClient implements YoutubeClient {
 					for (var video : items) {
 						results.add(video.get("id").get("videoId").textValue());
 					}
-					log.info("there are " + results.size() + " results");
 					var videosByIds = this.getVideosByIds(results);
 					return videosByIds
 							.map(map -> new ChannelVideos(channelId, map.values(), nextPageToken, prevPageToken));

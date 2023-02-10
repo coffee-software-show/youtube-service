@@ -204,21 +204,17 @@ class YoutubeController {
 
 	private final ApplicationEventPublisher publisher;
 
-	@RequestMapping(value = "/reset", method = { RequestMethod.GET, RequestMethod.POST })
+	@RequestMapping(value = "/refresh", method = { RequestMethod.GET, RequestMethod.POST })
 	ResponseEntity<?> reset(RequestEntity<String> payload,
 			@RequestParam(value = "hub.challenge", required = false) String hubChallenge) {
-
+		log.info("========================================");
 		log.info("resetting...");
 		if (StringUtils.hasText(hubChallenge)) {
-			log.info("got the hub challenge " + hubChallenge);
+			log.info("hub challenge " + hubChallenge);
 			return ResponseEntity.ok(hubChallenge);
 		}
-
-		log.info("webhook update!");
-		log.info("headers");
 		payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
-		log.info("payload");
-		log.info("" + (payload.getBody()));
+		log.info("payload: " + payload.getBody());
 		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
 		return ResponseEntity.status(204).build();
 	}
