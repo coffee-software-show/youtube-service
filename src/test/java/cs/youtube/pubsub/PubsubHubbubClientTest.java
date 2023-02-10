@@ -1,6 +1,5 @@
-package cs.youtube;
+package cs.youtube.pubsub;
 
-import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -14,7 +13,7 @@ class PubsubHubbubClientTest {
 
 	private final WebClient http = WebClient.create();
 
-	private final PubsubHubbubClient client = new PubsubHubbubClient(this.http,
+	private final PubsubHubbubClient client = new DefaultPubsubHubbubClient(this.http,
 			url("https://pubsubhubbub.appspot.com"));
 
 	private static URL url(String url) {
