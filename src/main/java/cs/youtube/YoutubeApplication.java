@@ -1,5 +1,6 @@
 package cs.youtube;
 
+import com.joshlong.twitter.Twitter;
 import cs.youtube.client.YoutubeClient;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

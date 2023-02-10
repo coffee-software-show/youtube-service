@@ -4,7 +4,6 @@ import com.joshlong.google.pubsubhubbub.PubsubHubbubClient;
 import com.joshlong.twitter.Twitter;
 import cs.youtube.utils.UrlUtils;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -12,14 +11,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import org.springframework.r2dbc.core.DatabaseClient;
 
-import java.net.URL;
 import java.time.Instant;
 import java.util.Date;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-
-import static cs.youtube.utils.UrlUtils.url;
 
 @Slf4j
 @Configuration
@@ -36,15 +32,13 @@ class EventListenerConfiguration {
 
 	private final Twitter twitter;
 
-	private final Twitter.Client client;
-
 	private final DatabaseClient databaseClient;
 
 	@EventListener
 	void videoCreated(YoutubeVideoCreatedEvent videoCreatedEvent) {
 		log.info("need to promote: {}", videoCreatedEvent.video().videoId() + ':' + videoCreatedEvent.video().title());
 		var scheduled = new Date();
-		twitter.scheduleTweet(client, scheduled, "starbuxman",
+		twitter.scheduleTweet(scheduled, "starbuxman",
 				videoCreatedEvent.video().title() + " " + "https://www.youtube.com/watch?v="
 						+ videoCreatedEvent.video().videoId(),
 				null) //
