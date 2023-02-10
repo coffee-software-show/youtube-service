@@ -178,7 +178,6 @@ class EventListenerConfiguration {
 	@EventListener(ApplicationReadyEvent.class)
 	void kickoff() {
 		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
-
 	}
 
 	@EventListener(YoutubeChannelUpdatedEvent.class)
