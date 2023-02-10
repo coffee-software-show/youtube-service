@@ -30,16 +30,19 @@ class PubsubHubbubClientTest {
 	@Test
 	void subscribe() throws Exception {
 		var topicUrl = url("https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCjcceQmjS4DKBW_J_1UANow");
-		var callbackUrl = url("https://api.coffeesoftware.com/refresh");
+		var callbackUrl = url("https://api.coffeesoftware.com/refresh-2");
 		var leaseInSeconds = 120;
 		var result = this.client
 				.unsubscribe(topicUrl, callbackUrl, PubsubHubbubClient.Verify.ASYNC, leaseInSeconds, null)
 				.thenMany(this.client.subscribe(topicUrl, callbackUrl, PubsubHubbubClient.Verify.ASYNC, leaseInSeconds,
 						null));
-		StepVerifier.create(result).consumeNextWith(re -> {
-			log.info(re.getStatusCode().value() + "");
-			re.getHeaders().forEach((key, value) -> log.info(key + '=' + value));
-		}).verifyComplete();
+		StepVerifier //
+				.create(result) //
+				.consumeNextWith(re -> {
+					log.info(re.getStatusCode().value() + "");
+					re.getHeaders().forEach((key, value) -> log.info(key + '=' + value));
+				}) //
+				.verifyComplete();
 	}
 
 }

@@ -10,6 +10,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
@@ -31,7 +32,10 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -113,12 +117,53 @@ class PubsubHubbubClient {
 
 @Slf4j
 @Configuration
-@RequiredArgsConstructor
-class EventListenerConfiguration {
+class PubsubHubbubClientConfiguration {
 
 	private final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
 
-	private final ExecutorService executorService = Executors.newCachedThreadPool();
+	@Bean
+	WebClient webClient(WebClient.Builder builder) {
+		return builder.build();
+	}
+
+	@Bean
+	PubsubHubbubClient pubsubHubbubClient(WebClient http) {
+		return new PubsubHubbubClient(http, url("https://pubsubhubbub.appspot.com"));
+	}
+
+	private void subscribe(PubsubHubbubClient pubsubHubbubClient, URL topicUrl, URL callbackUrl, int leaseInSeconds) {
+		pubsubHubbubClient.subscribe(topicUrl, callbackUrl, PubsubHubbubClient.Verify.ASYNC, leaseInSeconds, null)
+				.subscribe(re -> log.info("subscribed to " + topicUrl.toExternalForm()));
+	}
+
+	@Bean
+	ApplicationListener<ApplicationReadyEvent> readyEventApplicationListener(PubsubHubbubClient pubsubHubbubClient) {
+		return event -> {
+			var topicUrl = url("https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCjcceQmjS4DKBW_J_1UANow");
+			var callbackUrl = url("https://api.coffeesoftware.com/reset");
+			var leaseInSeconds = 60 * 60 * 2;
+			this.subscribe(pubsubHubbubClient, topicUrl, callbackUrl, leaseInSeconds);
+			scheduledExecutorService.schedule(
+					() -> this.subscribe(pubsubHubbubClient, topicUrl, callbackUrl, leaseInSeconds), 1, TimeUnit.HOURS);
+		};
+	}
+
+	private static URL url(String url) {
+		try {
+			return new URL(url);
+		}
+		catch (Throwable throwable) {
+			log.error("ooops!", throwable);
+		}
+		return null;
+	}
+
+}
+
+@Slf4j
+@Configuration
+@RequiredArgsConstructor
+class EventListenerConfiguration {
 
 	private final YoutubeService service;
 
@@ -126,17 +171,14 @@ class EventListenerConfiguration {
 
 	@EventListener
 	void videoCreated(YoutubeVideoCreatedEvent videoCreatedEvent) {
-		log.info("YoutubeVideoCreatedEvent");
 		log.info("need to promote: {} ", videoCreatedEvent.video().videoId() + ':' + videoCreatedEvent.video().title());
 	}
 
 	// hack: periodically force a re-evaluation of the data
 	@EventListener(ApplicationReadyEvent.class)
 	void kickoff() {
-		log.info("ApplicationReadyEvent");
-		this.executorService.submit(() -> this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now())));
-		this.scheduledExecutorService.schedule(
-				() -> this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now())), 1, TimeUnit.HOURS);
+		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
+
 	}
 
 	@EventListener(YoutubeChannelUpdatedEvent.class)
@@ -168,29 +210,11 @@ class YoutubeController {
 
 	private final ApplicationEventPublisher publisher;
 
-	@RequestMapping(value = "/refresh-2", method = { RequestMethod.GET, RequestMethod.POST })
-	ResponseEntity<?> refresh2(RequestEntity<String> payload,
+	@RequestMapping(value = "/reset", method = { RequestMethod.GET, RequestMethod.POST })
+	ResponseEntity<?> reset(RequestEntity<String> payload,
 			@RequestParam(value = "hub.challenge", required = false) String hubChallenge) {
 
-		log.info("/refresh-2!!!");
-		if (StringUtils.hasText(hubChallenge)) {
-			log.info("got the hub challenge " + hubChallenge);
-			return ResponseEntity.ok(hubChallenge);
-		}
-
-		log.info("webhook update!");
-		log.info("headers");
-		payload.getHeaders().forEach((k, v) -> log.info('\t' + k + '=' + String.join(",", v)));
-		log.info("payload");
-		log.info("" + (payload.getBody()));
-		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
-		return ResponseEntity.status(204).build();
-	}
-
-	@RequestMapping(value = "/refresh", method = { RequestMethod.GET, RequestMethod.POST })
-	ResponseEntity<?> refresh(RequestEntity<String> payload,
-			@RequestParam(value = "hub.challenge", required = false) String hubChallenge) {
-
+		log.info("resetting...");
 		if (StringUtils.hasText(hubChallenge)) {
 			log.info("got the hub challenge " + hubChallenge);
 			return ResponseEntity.ok(hubChallenge);
