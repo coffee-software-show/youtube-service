@@ -135,7 +135,8 @@ class DefaultYoutubeService implements YoububeAggregate {
 				.thenMany(this.databaseClient.sql(this.unpromotedQuerySql).fetch().all().map(mapVideoFunction))//
 				.doOnNext(video -> this.publisher.publishEvent(new YoutubeVideoCreatedEvent(video)))
 				.doOnError(throwable -> log.error(throwable.getMessage()))//
-				.thenMany(this.databaseClient.sql("select * from youtube_videos ").fetch().all().map(mapVideoFunction)) //
+				.thenMany(this.databaseClient.sql("select * from youtube_videos where fresh = true ").fetch().all()
+						.map(mapVideoFunction)) //
 				.toStream()//
 				.collect(Collectors.toSet());
 
