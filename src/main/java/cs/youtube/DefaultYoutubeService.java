@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
-class DefaultYoutubeService implements YoububeAggregate {
+class DefaultYoutubeService implements YoububeService {
 
 	private final ApplicationEventPublisher publisher;
 

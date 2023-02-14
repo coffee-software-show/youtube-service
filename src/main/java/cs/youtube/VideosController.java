@@ -26,7 +26,7 @@ class VideosController {
 
 	private final Executor executor = Executors.newSingleThreadExecutor();
 
-	private final YoububeAggregate service;
+	private final YoububeService service;
 
 	private final ApplicationEventPublisher publisher;
 

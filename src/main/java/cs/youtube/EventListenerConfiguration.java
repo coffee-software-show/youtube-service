@@ -22,9 +22,11 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 class EventListenerConfiguration {
 
+	private final int leaseInSeconds = 60 * 60 * 1;
+
 	private final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
 
-	private final YoububeAggregate service;
+	private final YoububeService service;
 
 	private final ApplicationEventPublisher publisher;
 
@@ -61,18 +63,24 @@ class EventListenerConfiguration {
 
 	@EventListener(ApplicationReadyEvent.class)
 	void ready() {
-		var leaseInSeconds = 60 * 60 * 2;
-		subscribe(pubsubHubbubClient, leaseInSeconds);
-		scheduledExecutorService.schedule(() -> subscribe(pubsubHubbubClient, leaseInSeconds), 1, TimeUnit.HOURS);
+		renew();
+		scheduledExecutorService.schedule(this::renew, this.leaseInSeconds, TimeUnit.SECONDS);
+	}
+
+	private void renew() {
+		subscribe(pubsubHubbubClient, this.leaseInSeconds);
 		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
 	}
 
 	private static void subscribe(PubsubHubbubClient pubsubHubbubClient, int leaseInSeconds) {
 		var topicUrl = UrlUtils.url("https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCjcceQmjS4DKBW_J_1UANow");
 		var callbackUrl = UrlUtils.url("https://api.coffeesoftware.com/reset");
-		pubsubHubbubClient //
-				.subscribe(topicUrl, callbackUrl, PubsubHubbubClient.Verify.SYNC, leaseInSeconds, null)
-				.subscribe(re -> log.info("subscribed to " + topicUrl.toExternalForm()));
+		var unsubscribe = pubsubHubbubClient //
+				.unsubscribe(topicUrl, callbackUrl, PubsubHubbubClient.Verify.SYNC, leaseInSeconds, null)
+				.onErrorComplete();// don't caer if this fails
+		var subscribe = pubsubHubbubClient.subscribe(topicUrl, callbackUrl, PubsubHubbubClient.Verify.SYNC,
+				leaseInSeconds, null);
+		unsubscribe.thenMany(subscribe).subscribe(re -> log.info("subscribed to " + topicUrl.toExternalForm()));
 	}
 
 }

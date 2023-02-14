@@ -4,7 +4,7 @@ import cs.youtube.client.Video;
 
 import java.util.List;
 
-interface YoububeAggregate {
+interface YoububeService {
 
 	void refresh();
 
