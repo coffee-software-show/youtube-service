@@ -58,17 +58,16 @@ class EventListenerConfiguration {
 
 	@EventListener(YoutubeChannelUpdatedEvent.class)
 	void youtubeChannelUpdated() {
-		service.refresh();
+		this.service.refresh();
 	}
 
 	@EventListener(ApplicationReadyEvent.class)
 	void ready() {
-		renew();
-		scheduledExecutorService.schedule(this::renew, this.leaseInSeconds, TimeUnit.SECONDS);
+		this.scheduledExecutorService.scheduleAtFixedRate(this::renew, 0, this.leaseInSeconds, TimeUnit.SECONDS);
 	}
 
 	private void renew() {
-		subscribe(pubsubHubbubClient, this.leaseInSeconds);
+		subscribe(this.pubsubHubbubClient, this.leaseInSeconds);
 		this.publisher.publishEvent(new YoutubeChannelUpdatedEvent(Instant.now()));
 	}
 
