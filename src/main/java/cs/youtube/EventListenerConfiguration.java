@@ -52,8 +52,8 @@ class EventListenerConfiguration {
 						.rowsUpdated()//
 				) //
 				.filter(count -> count > 0) //
-				.subscribe(rows -> log.info("successfully promoted " + videoCreatedEvent.video().videoId()
-						+ " with title " + videoCreatedEvent.video().title()));
+				.subscribe(rows -> log.info("successfully promoted {} with title {}",
+						videoCreatedEvent.video().videoId(), videoCreatedEvent.video().title()));
 	}
 
 	@EventListener(YoutubeChannelUpdatedEvent.class)
